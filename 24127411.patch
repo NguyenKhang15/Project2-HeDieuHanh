@@ -1,0 +1,222 @@
+From 97ce1a92df6718b3aab0e784336868eb03de119e Mon Sep 17 00:00:00 2001
+From: NguyenKhang15 <ntkhang2416@clc.fitus.edu.vn>
+Date: Fri, 1 May 2026 03:40:58 +0700
+Subject: [PATCH] =?UTF-8?q?C=E1=BA=ADp=20nh=E1=BA=ADt=20to=C3=A0n=20b?=
+ =?UTF-8?q?=E1=BB=99=20code=20-=20Ho=C3=A0n=20th=C3=A0nh=20Task=201?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ kernel/proc.c    | 54 +++++++++++++++++++++++++-----------------------
+ kernel/proc.h    | 37 +++++++++++++++------------------
+ user/usertests.c |  2 +-
+ 3 files changed, 46 insertions(+), 47 deletions(-)
+
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 130d9ce..2ae53ca 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -102,10 +102,7 @@ allocpid()
+   return pid;
+ }
+ 
+-// Look in the process table for an UNUSED proc.
+-// If found, initialize state required to run in the kernel,
+-// and return with p->lock held.
+-// If there are no free procs, or a memory allocation fails, return 0.
++// sữa ở đây 
+ static struct proc*
+ allocproc(void)
+ {
+@@ -115,9 +112,8 @@ allocproc(void)
+     acquire(&p->lock);
+     if(p->state == UNUSED) {
+       goto found;
+-    } else {
+-      release(&p->lock);
+     }
++    release(&p->lock);
+   }
+   return 0;
+ 
+@@ -125,14 +121,19 @@ found:
+   p->pid = allocpid();
+   p->state = USED;
+ 
+-  // Allocate a trapframe page.
+   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+     freeproc(p);
+     release(&p->lock);
+     return 0;
+   }
+ 
+-  // An empty user page table.
++  if((p->usyscall = (struct usyscall *)kalloc()) == 0){
++    freeproc(p);
++    release(&p->lock);
++    return 0;
++  }
++  p->usyscall->pid = p->pid; 
++ 
+   p->pagetable = proc_pagetable(p);
+   if(p->pagetable == 0){
+     freeproc(p);
+@@ -140,8 +141,6 @@ found:
+     return 0;
+   }
+ 
+-  // Set up new context to start executing at forkret,
+-  // which returns to user space.
+   memset(&p->context, 0, sizeof(p->context));
+   p->context.ra = (uint64)forkret;
+   p->context.sp = p->kstack + PGSIZE;
+@@ -149,15 +148,18 @@ found:
+   return p;
+ }
+ 
+-// free a proc structure and the data hanging from it,
+-// including user pages.
+-// p->lock must be held.
++// sữa ở đây 
+ static void
+ freeproc(struct proc *p)
+ {
+   if(p->trapframe)
+     kfree((void*)p->trapframe);
+   p->trapframe = 0;
++
++  if(p->usyscall)
++    kfree((void*)p->usyscall);
++  p->usyscall = 0;
++
+   if(p->pagetable)
+     proc_freepagetable(p->pagetable, p->sz);
+   p->pagetable = 0;
+@@ -171,30 +173,22 @@ freeproc(struct proc *p)
+   p->state = UNUSED;
+ }
+ 
+-// Create a user page table for a given process, with no user memory,
+-// but with trampoline and trapframe pages.
++// sữa ở đây 
+ pagetable_t
+ proc_pagetable(struct proc *p)
+ {
+   pagetable_t pagetable;
+ 
+-  // An empty page table.
+   pagetable = uvmcreate();
+   if(pagetable == 0)
+     return 0;
+ 
+-  // map the trampoline code (for system call return)
+-  // at the highest user virtual address.
+-  // only the supervisor uses it, on the way
+-  // to/from user space, so not PTE_U.
+   if(mappages(pagetable, TRAMPOLINE, PGSIZE,
+               (uint64)trampoline, PTE_R | PTE_X) < 0){
+     uvmfree(pagetable, 0);
+     return 0;
+   }
+ 
+-  // map the trapframe page just below the trampoline page, for
+-  // trampoline.S.
+   if(mappages(pagetable, TRAPFRAME, PGSIZE,
+               (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
+     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+@@ -202,16 +196,24 @@ proc_pagetable(struct proc *p)
+     return 0;
+   }
+ 
++  if(mappages(pagetable, USYSCALL, PGSIZE,
++              (uint64)(p->usyscall), PTE_R | PTE_U) < 0){
++    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
++    uvmunmap(pagetable, TRAPFRAME, 1, 0);
++    uvmfree(pagetable, 0);
++    return 0;
++  }
++
+   return pagetable;
+ }
+ 
+-// Free a process's page table, and free the
+-// physical memory it refers to.
+-void
+-proc_freepagetable(pagetable_t pagetable, uint64 sz)
++
++// sữa ở đây
++void proc_freepagetable(pagetable_t pagetable, uint64 sz)
+ {
+   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+   uvmunmap(pagetable, TRAPFRAME, 1, 0);
++  uvmunmap(pagetable, USYSCALL, 1, 0); 
+   uvmfree(pagetable, sz);
+ }
+ 
+diff --git a/kernel/proc.h b/kernel/proc.h
+index d021857..cad6535 100644
+--- a/kernel/proc.h
++++ b/kernel/proc.h
+@@ -81,27 +81,24 @@ struct trapframe {
+ 
+ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+ 
+-// Per-process state
++// sữa ở đây
+ struct proc {
+   struct spinlock lock;
+ 
+-  // p->lock must be held when using these:
+-  enum procstate state;        // Process state
+-  void *chan;                  // If non-zero, sleeping on chan
+-  int killed;                  // If non-zero, have been killed
+-  int xstate;                  // Exit status to be returned to parent's wait
+-  int pid;                     // Process ID
++  enum procstate state;        
++  void *chan;                  
++  int killed;                 
++  int xstate;                 
++  int pid;                     
+ 
+-  // wait_lock must be held when using this:
+-  struct proc *parent;         // Parent process
+-
+-  // these are private to the process, so p->lock need not be held.
+-  uint64 kstack;               // Virtual address of kernel stack
+-  uint64 sz;                   // Size of process memory (bytes)
+-  pagetable_t pagetable;       // User page table
+-  struct trapframe *trapframe; // data page for trampoline.S
+-  struct context context;      // swtch() here to run process
+-  struct file *ofile[NOFILE];  // Open files
+-  struct inode *cwd;           // Current directory
+-  char name[16];               // Process name (debugging)
+-};
++  struct proc *parent;         
++  uint64 kstack;               
++  uint64 sz;                  
++  pagetable_t pagetable;       
++  struct trapframe *trapframe;
++  struct usyscall *usyscall;   
++  struct context context;      
++  struct file *ofile[NOFILE];  
++  struct inode *cwd;           
++  char name[16];               
++};
+\ No newline at end of file
+diff --git a/user/usertests.c b/user/usertests.c
+index 28b53f9..7df0278 100644
+--- a/user/usertests.c
++++ b/user/usertests.c
+@@ -244,7 +244,7 @@ copyinstr3(char *s)
+ // See if the kernel refuses to read/write user memory that the
+ // application doesn't have anymore, because it returned it.
+ void
+-rwsbrk()
++rwsbrk(char *s)
+ {
+   int fd, n;
+   
+-- 
+2.50.1 (Apple Git-155)
+
